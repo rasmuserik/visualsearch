@@ -1,0 +1,152 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <style>
+    body { 
+        font-family: helvetica, sans-serif;
+        margin: 5%;
+    }
+    #search_help {
+        margin-bottom: 3px;
+    }
+  </style>
+  <meta http-equiv="content-type" content="text/html;charset=UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="chrome=1">
+  <title>Bibliotek.dk visualsearch</title>
+  <link rel="stylesheet" href="lib/css/reset.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="lib/css/icons.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="lib/css/workspace.css" type="text/css" media="screen" charset="utf-8">
+
+  <script src="vendor/jquery-1.6.1.js" type="text/javascript" charset="utf-8"></script>
+  <script src="vendor/jquery.ui.core.js" type="text/javascript" charset="utf-8"></script>
+  <script src="vendor/jquery.ui.widget.js" type="text/javascript" charset="utf-8"></script>
+  <script src="vendor/jquery.ui.position.js" type="text/javascript" charset="utf-8"></script>
+  <script src="vendor/jquery.ui.autocomplete.js" type="text/javascript" charset="utf-8"></script>
+  <script src="vendor/underscore-1.1.5.js" type="text/javascript" charset="utf-8"></script>
+  <script src="vendor/backbone-0.5.0.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/visualsearch.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/views/search_box.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/views/search_facet.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/views/search_input.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/models/search_facets.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/models/search_query.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/utils/backbone_extensions.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/utils/hotkeys.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/utils/jquery_extensions.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/utils/search_parser.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/utils/inflector.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/js/templates/templates.js" type="text/javascript" charset="utf-8"></script>
+</head>
+<body>
+    <div>
+        <h1>bibliotek.dk</h1>
+        <div id="search_help"></div>
+        <div id="search_box_container"></div>
+        <div id="search_results">&nbsp;</div>
+    </div>
+
+    <script type="text/javascript" charset="utf-8">
+      var keys = {
+        forfatter: 'phrase.creator',
+        titel: 'phrase.title',
+        emne: 'phrase.subject',
+        sprog: 'phrase.language',
+        beskrivelse: 'phrase.description',
+        materiale: 'phrase.type',
+        anyphrase: 'phrase.anyIndexes',
+        id: 'phrase.identifier',
+        dato: 'phrase.date',
+        kilde: 'phrase.source',
+        text: 'cql.anyIndexes'
+      };
+      var categories = Object.keys(keys);
+      $(document).ready(function() {
+
+        $("#search_help").html("<small><strong>søg:</strong> " + categories.join(", ") + "</small>");
+        var visualSearch = VS.init({
+          container  : $('#search_box_container'),
+          query      : '',
+          unquotable : [
+          ],
+          callbacks  : {
+            search : function(query, searchCollection) {
+              A = query; B = searchCollection;
+              var cql = searchCollection.facets().map(function(elem) { 
+                var key = Object.keys(elem)[0]; 
+                return keys[key] + '="' + elem[key].replace('\\', '\\\\').replace('"', '\\"') + '"';
+              }).join(" and ");
+              console.log(["query", searchCollection.facets(), query, cql]);
+              $('#search_results').html('<span class="raquo">&raquo;</span> You searched for: <b>' + searchCollection.serialize() + '</b>');
+              $.ajax({url: "http://opensearch.addi.dk/2.0/", data: {
+                action: 'search', query: cql, start: 1, stepValue: 10, outputType: 'json'
+                }, dataType: 'jsonp', success: function(result) { 
+                $('#search_results').html(X);
+
+                var html = "<div><ul>";
+                result.searchResponse.result.searchResult.map(function(result) {
+                    result.collection["object"].map(function(obj) {
+                        html += "<li><ul>";
+                        Object.keys(obj.record).map(function(key) {
+                            if(key == "@") return "";
+                            html += "<li>" + key + ": " + obj.record[key].map(function(elem) {
+                                
+                                return elem.$;
+                            }).join(", ") + "</li>";
+                        });
+                        html += "</ul></li>";
+                    });
+                });
+                html += "</ul></div>";
+                $('#search_results').html(html);
+            }})
+            },
+
+            valueMatches : function(category, searchTerm, callback) {
+              if(keys[category] && keys[category].indexOf("phrase.") === 0) {
+                  $.ajax({url: "http://openscan.addi.dk/2.0/", data: {action: 'openScan', field: keys[category], lower: searchTerm.toLowerCase(), limit: 32, outputType: 'json'}, dataType: 'jsonp', success: function(result) { 
+                        X = result;
+                        console.log(result); 
+                        callback(result.scanResponse.term.map(function(x) { return x.name.$; }));
+                  }})
+                return;
+              }
+            },
+            facetMatches : function(callback) {
+              callback(categories);
+            }
+          }
+        });
+        $("input").focus()
+        $.ajax({url: "http://openscan.addi.dk/2.0/", data: {action: 'openScan', field: 'phrase.creator', lower: 'hest', limit: 10, outputType: 'json'}, dataType: 'jsonp', success: function(x) { console.log(x); }})
+        $.ajax({url: "http://opensearch.addi.dk/2.0/", data: {
+action: 'search', query: 'denmark', /*agency: '100200',*/ start: 1, stepValue: 10, outputType: 'json'
+}, dataType: 'jsonp', success: function(x) { XXX = x; console.log('opensearch', x); }})
+
+/*
+query:
+agency:
+profile:
+allObjects: false
+authentication:
+callback:
+collectionType:
+facets:
+number and list of facets
+includeMarcXchange: false
+outputType: 'json'
+allRelations: false
+relationData: "type", "uri" or "full"
+repository:
+source:
+start:1
+stepValue: 5
+rank: rank_general, rank_title, rank_creator
+sort: date_ascending, date_descending, creator_ascending, creator_descending, random
+userDefinedBoost:
+userDefinedRanking:
+queryDebug: true */
+      });
+    </script>
+
+</body>
+</html>
